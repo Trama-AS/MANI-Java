@@ -37,6 +37,37 @@ flowchart LR
 | `GET` | `/api/v1/rules/health` | Verificación de estado del motor de reglas. | No |
 | `POST` | `/api/v1/rules/evaluate-rate` | Cálculo de precio final con desglose de recargos. | Sí (JSON) |
 | `POST` | `/api/v1/rules/rank-allies` | Ordenamiento y ponderación de aliados para servicio. | Opcional |
+| `POST` | `/api/v1/rules/categories/evaluate` | Reglas operativas de la categoría de servicio (US-03.1.1-M6). | Sí (JSON) |
+
+> El Gateway recorta `/api/v1/rules` antes de reenviar: cada ruta también responde sin el prefijo. Core la invoca completa por la red interna (`RULES_SERVICE_URL`, p. ej. `http://rules-service:8080`).
+
+### Reglas de categoría (`POST /api/v1/rules/categories/evaluate`)
+
+Reemplaza las validaciones que vivían en `crear_categoria_servicio()` (migración 003, SCRUM-857) y en Core Node. Contrato publicado en `MANI-APIGateway/docs/openapi/rules.yaml`.
+
+**Encabezados** (los pone el Gateway tras validar el JWT, o Core al llamar internamente): `X-Tenant-Id` (obligatorio; el tenant **nunca** se toma del cuerpo), `X-User-Role` (obligatorio; `CREATE`/`UPDATE` exigen `ADMIN`), `X-Correlation-ID`.
+
+```json
+{ "categoryId": null, "context": { "operation": "CREATE", "name": "  Plomería  Express ", "flujoOperativo": "tarifa_estandar" } }
+```
+
+**Respuesta `200`** (la regla incumplida es `allowed=false`, no un error HTTP):
+```json
+{ "allowed": true, "ruleSetVersion": "category-rules-v1", "violations": [],
+  "normalized": { "name": "Plomería Express", "flujoOperativo": "TARIFA_ESTANDAR" },
+  "tenantId": "…", "categoryId": null, "operation": "CREATE", "correlationId": "…" }
+```
+
+| Operación | Reglas | Código |
+| :--- | :--- | :--- |
+| `CREATE` | nombre normalizado de 3 a 60 caracteres con al menos una letra | `MANI-CAT-422N` |
+| `CREATE` | flujo operativo en `COTIZACION_PREVIA` / `TARIFA_ESTANDAR` | `MANI-CAT-422F` |
+| `UPDATE` | las mismas, solo sobre los campos enviados | `422N` / `422F` |
+| `OPERATE` | la categoría debe estar activa | `MANI-CAT-422C` |
+
+Errores: `400 VALIDATION_ERROR | TENANT_REQUIRED`, `401 UNAUTHORIZED`, `403 FORBIDDEN | TENANT_MISMATCH`. El nombre único por tenant (`409`) sigue en el índice `ux_categoria_tenant_nombre`, porque necesita estado.
+
+Los parámetros viven en `application.properties` (`mani.rules.category.*`) con override por tenant (`mani.rules.category.tenants[<uuid>].*`): cambiarlos solo exige redesplegar Rules. Un flujo nuevo además requiere ampliar el `CHECK ck_categoria_flujo` en BD.
 
 ### Ejemplo: Evaluación de Tarifa (`POST /api/v1/rules/evaluate-rate`)
 **Petición:**
