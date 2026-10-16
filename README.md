@@ -146,7 +146,18 @@ Pruebas con **JUnit 5** (vía `spring-boot-starter-test`) y cobertura con **JaCo
 mvn verify
 ```
 
-El reporte queda en `target/site/jacoco/` (HTML) y `target/site/jacoco/jacoco.xml`, la ruta que SonarQube lee por defecto. El workflow `CI` (`.github/workflows/ci.yml`) ejecuta `mvn -B verify` en cada Pull Request y en cada push a `main`, y publica el reporte como artefacto. Conectarlo al Quality Gate requiere el proyecto en SonarCloud y su token, que quedan pendientes de DevOps.
+El reporte queda en `target/site/jacoco/` (HTML) y `target/site/jacoco/jacoco.xml`. `mvn verify` **falla** si la cobertura baja de 85 % de líneas u 80 % de ramas (`jacoco:check`, umbrales en `pom.xml`).
+
+| Suite | Qué cubre |
+| :--- | :--- |
+| `CategoryRuleEvaluatorTest` | Reglas puras: límites 2/3/60/61, conteo por caracteres (emoji), letras Unicode, normalización, flujos, UPDATE parcial, OPERATE, reglas configurables, determinismo |
+| `CategoryRulesPropertiesTest` | Binding de `mani.rules.category.*`, override por tenant, versión trazable, configuración incoherente que impide el arranque |
+| `CategoryRulesControllerTest` | Contrato HTTP: forma de respuesta, prefijo del Gateway, roles, tenant (`TENANT_REQUIRED`, `TENANT_MISMATCH`), 400/401/403/415 |
+| `UnexpectedErrorTest`, `WebSkeletonTest`, `HealthControllerSmokeTest` | 500 uniforme sin filtrar detalle, correlation ID, CORS, 404/405 |
+
+El workflow `CI` ejecuta `mvn -B verify` en cada Pull Request y push a `main`/`develop`, publica cobertura y reportes de Surefire, y corre **SonarCloud con `sonar.qualitygate.wait=true`** (el PR falla si no pasa el Quality Gate). Ese paso se activa cuando el repositorio tiene el secret `SONAR_TOKEN` y el proyecto `Trama-AS_MANI-Java` existe en SonarCloud (DevOps); mientras tanto CI emite una advertencia en vez de fallar.
+
+Las pruebas de contrato extremo a extremo (Gateway → Rules) viven en `MANI-APIGateway` (`postman/MANI-Rules.postman_collection.json`, job `contract-gate-rules`).
 
 ---
 
