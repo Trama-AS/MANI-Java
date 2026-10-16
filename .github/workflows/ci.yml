@@ -1,0 +1,39 @@
+name: CI
+
+# Ejecuta las pruebas unitarias y genera el reporte de cobertura JaCoCo (QA-06 / SCRUM-1123).
+# El análisis de SonarQube y su Quality Gate se conectan a este reporte; el proyecto en
+# SonarCloud y su token los crea DevOps (no se incluyen aquí).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Pruebas (Java 17)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Test con cobertura (JaCoCo)
+        run: mvn -B verify
+
+      - name: Publicar reporte de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-jacoco
+          path: target/site/jacoco/
+          if-no-files-found: warn
