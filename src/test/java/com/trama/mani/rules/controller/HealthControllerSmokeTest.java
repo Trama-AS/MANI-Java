@@ -13,8 +13,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * Prueba de humo (QA-06 / SCRUM-1123) de la capa web. Cuando lleguen las reglas reales de
  * tarifa y el ranking, sus pruebas se suman en este paquete.
  */
-@WebMvcTest(RulesController.class)
-class RulesControllerSmokeTest {
+@WebMvcTest(HealthController.class)
+class HealthControllerSmokeTest {
 
     @Autowired
     private MockMvc mockMvc;
