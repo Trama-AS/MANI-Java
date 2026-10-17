@@ -1,0 +1,56 @@
+name: CI
+
+# Pruebas JUnit 5 + cobertura JaCoCo (QA-06 / SCRUM-1123) con umbral bloqueante
+# (jacoco:check en `mvn verify`, ver pom.xml) y análisis SonarCloud con espera del
+# Quality Gate (US-03.1.1-M6.3 / SCRUM-1227). El paso de Sonar corre solo si el
+# secret SONAR_TOKEN existe: así un PR no falla mientras DevOps crea el proyecto
+# Trama-AS_MANI-Java en SonarCloud.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Pruebas (Java 17)
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Sonar necesita el historial para atribuir código nuevo en PRs.
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Test con cobertura y umbral (JaCoCo)
+        run: mvn -B verify
+
+      - name: Publicar reportes de pruebas y cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-jacoco
+          path: |
+            target/site/jacoco/
+            target/surefire-reports/
+          if-no-files-found: warn
+
+      - name: SonarCloud + Quality Gate
+        if: env.SONAR_TOKEN != ''
+        run: mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar -Dsonar.qualitygate.wait=true
+
+      - name: Aviso si Sonar no está configurado
+        if: env.SONAR_TOKEN == ''
+        run: echo "::warning::SONAR_TOKEN no configurado; se omitió el análisis de SonarCloud y su Quality Gate."
