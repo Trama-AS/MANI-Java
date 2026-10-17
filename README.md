@@ -106,6 +106,19 @@ docker run -d -p 8080:8080 --name mani-rules mani-rules-java:local
 
 ---
 
+## 🧪 Pruebas y cobertura
+
+Pruebas con **JUnit 5** (vía `spring-boot-starter-test`) y cobertura con **JaCoCo**.
+
+```bash
+# Ejecutar pruebas y generar el reporte de cobertura
+mvn verify
+```
+
+El reporte queda en `target/site/jacoco/` (HTML) y `target/site/jacoco/jacoco.xml`, la ruta que SonarQube lee por defecto. El workflow `CI` (`.github/workflows/ci.yml`) ejecuta `mvn -B verify` en cada Pull Request y en cada push a `main`, y publica el reporte como artefacto. Conectarlo al Quality Gate requiere el proyecto en SonarCloud y su token, que quedan pendientes de DevOps.
+
+---
+
 ## 👥 Equipo y Gobernanza
 * **Organización:** [TRAMA · Ingeniería de Software](https://github.com/Trama-AS)
 * **Repositorio Oficial:** [MANI-Java](https://github.com/Trama-AS/MANI-Java)
