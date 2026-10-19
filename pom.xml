@@ -17,13 +17,8 @@
 
     <properties>
         <java.version>17</java.version>
-        <!-- SonarCloud (ADR-0005). El scanner Maven lee estas propiedades; el token
-             (SONAR_TOKEN) es un secret del repositorio. -->
-        <sonar.organization>trama-as</sonar.organization>
-        <sonar.projectKey>Trama-AS_MANI-Java</sonar.projectKey>
-        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
-        <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
-        <sonar.coverage.exclusions>**/ManiRulesApplication.java</sonar.coverage.exclusions>
+        <!-- SonarQube (ADR-0005): la configuración del análisis vive en
+             sonar-project.properties y la ejecuta .github/workflows/quality-gate.yml. -->
         <!-- Umbral local de cobertura: `mvn verify` falla por debajo (jacoco:check). -->
         <jacoco.minimum.line>0.85</jacoco.minimum.line>
         <jacoco.minimum.branch>0.80</jacoco.minimum.branch>
