@@ -57,9 +57,13 @@ jobs:
       - name: Pruebas con cobertura y umbral (JaCoCo)
         run: mvn -B verify
 
-      # El scanner necesita las dependencias para resolver tipos (sonar.java.libraries).
-      - name: Copiar dependencias de compilación
-        run: mvn -B dependency:copy-dependencies -DincludeScope=compile -DoutputDirectory=target/dependency
+      # El scanner necesita las dependencias para resolver tipos: las de compilación
+      # para el código (sonar.java.libraries) y las de prueba para los tests
+      # (sonar.java.test.libraries).
+      - name: Copiar dependencias de compilación y de prueba
+        run: |
+          mvn -B dependency:copy-dependencies -DincludeScope=compile -DoutputDirectory=target/dependency
+          mvn -B dependency:copy-dependencies -DincludeScope=test -DoutputDirectory=target/test-dependency
 
       # jacoco.xml referencia las clases por paquete y archivo, sin rutas
       # absolutas, así que sirve tal cual en el workspace del runner self-hosted.
@@ -71,6 +75,7 @@ jobs:
             target/classes
             target/test-classes
             target/dependency
+            target/test-dependency
             target/site/jacoco/jacoco.xml
           if-no-files-found: error
           retention-days: 3
