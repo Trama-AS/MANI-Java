@@ -1,0 +1,41 @@
+name: CI
+
+# Pruebas JUnit 5 + cobertura JaCoCo (QA-06 / SCRUM-1123) con umbral bloqueante
+# (jacoco:check en `mvn verify`, ver pom.xml). El análisis de SonarQube y su
+# Quality Gate corren en quality-gate.yml (QA4-02 / SCRUM-1265).
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Pruebas (Java 17)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Test con cobertura y umbral (JaCoCo)
+        run: mvn -B verify
+
+      - name: Publicar reportes de pruebas y cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-jacoco
+          path: |
+            target/site/jacoco/
+            target/surefire-reports/
+          if-no-files-found: warn

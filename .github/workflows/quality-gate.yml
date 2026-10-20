@@ -1,0 +1,134 @@
+name: Quality Gate
+
+# QA4-02 (SCRUM-1265): análisis de SonarQube Community con Quality Gate
+# bloqueante (ADR-0005, Políticas §14.1).
+#
+# El servidor SonarQube vive en la VM de Calidad (red privada 10.43.x.x), que los
+# runners de GitHub no alcanzan. Por eso el trabajo se divide en dos jobs:
+#   1. pruebas_cobertura: corre en ubuntu-latest. Aquí se ejecuta el código del
+#      repositorio (mvn verify con jacoco:check) y se generan el bytecode, las
+#      dependencias y el reporte jacoco.xml.
+#   2. sonar_quality_gate: corre en el runner self-hosted de la VM de Calidad
+#      (label "calidad"). Solo descarga el artefacto y ejecuta el scanner; no
+#      ejecuta Maven ni código del repositorio en la VM.
+#
+# SonarQube Community no analiza ramas ni PRs, así que se usan dos proyectos:
+#   - mani-java: push a develop (estado oficial de la rama).
+#   - mani-java-pr: pull requests, para no pisar el estado de develop.
+#
+# Para que el gate BLOQUEE el merge, el ruleset de develop, release y main debe
+# exigir los dos checks: "Pruebas y cobertura" y "Sonar Quality Gate". Si las
+# pruebas fallan, el job de Sonar queda omitido y GitHub cuenta un job omitido
+# como aprobado.
+#
+# Requisitos: secreto SONAR_TOKEN y variable SONAR_HOST_URL (URL del servidor en
+# la VM de Calidad), definidos en el repositorio o en la organización.
+
+on:
+  pull_request:
+    branches: [develop, release, main]
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+# En PR se cancela la corrida anterior; en push a develop cada commit conserva
+# su análisis.
+concurrency:
+  group: quality-gate-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pruebas_cobertura:
+    name: Pruebas y cobertura
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Pruebas con cobertura y umbral (JaCoCo)
+        run: mvn -B verify
+
+      # El scanner necesita las dependencias para resolver tipos: las de compilación
+      # para el código (sonar.java.libraries) y las de prueba para los tests
+      # (sonar.java.test.libraries).
+      - name: Copiar dependencias de compilación y de prueba
+        run: |
+          mvn -B dependency:copy-dependencies -DincludeScope=compile -DoutputDirectory=target/dependency
+          mvn -B dependency:copy-dependencies -DincludeScope=test -DoutputDirectory=target/test-dependency
+
+      # jacoco.xml referencia las clases por paquete y archivo, sin rutas
+      # absolutas, así que sirve tal cual en el workspace del runner self-hosted.
+      - name: Publicar compilado y cobertura
+        uses: actions/upload-artifact@v4
+        with:
+          name: compilado_java
+          path: |
+            target/classes
+            target/test-classes
+            target/dependency
+            target/test-dependency
+            target/site/jacoco/jacoco.xml
+          if-no-files-found: error
+          retention-days: 3
+
+  sonar_quality_gate:
+    name: Sonar Quality Gate
+    needs: pruebas_cobertura
+    # Los PRs desde forks no llegan al runner de la VM: su código no es de
+    # confianza y no tienen acceso a los secretos. En vez de omitir el job (un
+    # job omitido cuenta como aprobado), el job corre en ubuntu-latest y falla.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON('["self-hosted","calidad"]') }}
+    steps:
+      - name: Bloquear PRs desde forks
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::Los PRs desde forks no pasan el Quality Gate. Abra el PR desde una rama de Trama-AS."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Descargar compilado y cobertura
+        uses: actions/download-artifact@v4
+        with:
+          name: compilado_java
+          path: target
+
+      # Si falta el secreto o la variable, el job falla. Un check omitido o en
+      # verde sin análisis daría una falsa señal de calidad.
+      - name: Verificar configuración de SonarQube
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::SONAR_TOKEN no está configurado en los secretos del repositorio."
+            exit 1
+          fi
+          if [ -z "$SONAR_HOST_URL" ]; then
+            echo "::error::SONAR_HOST_URL no está configurada en las variables del repositorio."
+            exit 1
+          fi
+
+      # v8.2.2 fijada por SHA del tag (ba9859e).
+      - name: Análisis de SonarQube y espera del Quality Gate
+        uses: sonarsource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ github.event_name == 'pull_request' && 'mani-java-pr' || 'mani-java' }}
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
