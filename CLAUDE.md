@@ -16,5 +16,9 @@ Este documento sintetiza las reglas de arquitectura y patrones de código para t
   - `com.trama.mani.rules.controller`: Exposición de endpoints REST.
   - `com.trama.mani.rules.service`: Algoritmos de cálculo de tarifas y evaluación de condiciones.
   - `com.trama.mani.rules.dto`: Objetos de transferencia de datos de entrada/salida.
+  - `com.trama.mani.rules.config`: Parámetros de reglas externalizados (`@ConfigurationProperties`), por tenant.
+  - `com.trama.mani.rules.web`: Transversales HTTP (Correlation ID, contexto de tenant, manejo uniforme de errores `{error, code, correlationId}`).
+* **Rutas:** el Gateway recorta `/api/v1/rules` antes de reenviar; todo endpoint responde con y sin ese prefijo (`@RequestMapping({"/api/v1/rules", ""})`).
+* **CORS:** lo maneja únicamente `MANI-APIGateway`; no usar `@CrossOrigin`.
 * **Inmutabilidad y Pureza:** Los métodos de cálculo de reglas deben ser en lo posible funciones deterministas (mismas entradas generan el mismo resultado de cálculo).
 * **Logging:** Propagar en los logs el encabezado `X-Correlation-ID` recibido.

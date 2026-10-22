@@ -1,12 +1,12 @@
 name: CI
 
-# Ejecuta las pruebas unitarias y genera el reporte de cobertura JaCoCo (QA-06 / SCRUM-1123).
-# El análisis de SonarQube y su Quality Gate se conectan a este reporte; el proyecto en
-# SonarCloud y su token los crea DevOps (no se incluyen aquí).
+# Pruebas JUnit 5 + cobertura JaCoCo (QA-06 / SCRUM-1123) con umbral bloqueante
+# (jacoco:check en `mvn verify`, ver pom.xml). El análisis de SonarQube y su
+# Quality Gate corren en quality-gate.yml (QA4-02 / SCRUM-1265).
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
 
 permissions:
@@ -27,13 +27,15 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Test con cobertura (JaCoCo)
+      - name: Test con cobertura y umbral (JaCoCo)
         run: mvn -B verify
 
-      - name: Publicar reporte de cobertura
+      - name: Publicar reportes de pruebas y cobertura
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-jacoco
-          path: target/site/jacoco/
+          path: |
+            target/site/jacoco/
+            target/surefire-reports/
           if-no-files-found: warn
