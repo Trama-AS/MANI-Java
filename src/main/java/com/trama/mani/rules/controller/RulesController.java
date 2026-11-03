@@ -1,62 +1,65 @@
 package com.trama.mani.rules.controller;
 
+import com.trama.mani.rules.dto.AllyRankingRequest;
+import com.trama.mani.rules.dto.AllyRankingResponse;
+import com.trama.mani.rules.dto.AllyRankingResponse.RankedAlly;
+import com.trama.mani.rules.service.AllyRanker;
+import com.trama.mani.rules.service.CriterioRanking;
+import com.trama.mani.rules.web.ApiException;
 import com.trama.mani.rules.web.CorrelationIdFilter;
-import java.util.ArrayList;
-import java.util.HashMap;
+import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Map;
-import org.springframework.http.ResponseEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Endpoints de tarifa (RF-16/RF-22) y ranking (RF-13) aún simulados; se implementan en sus
- * propias historias. El Gateway recorta "/api/v1/rules" antes de reenviar (nginx.conf), así que
- * cada ruta responde con y sin ese prefijo; Core la llama completa por la red interna.
- * CORS lo resuelve únicamente el Gateway.
+ * Ranking de aliados (RF-13 / SCRUM-1462). La tarifa vive en {@link RatesController}. Como en las reglas de categoría,
+ * tenant y rol llegan como encabezados de quien ya validó el JWT (Gateway o Dispatch por la red interna). El Gateway
+ * recorta "/api/v1/rules" antes de reenviar (nginx.conf), así que la ruta responde con y sin ese prefijo. CORS lo
+ * resuelve únicamente el Gateway.
  */
 @RestController
 @RequestMapping({"/api/v1/rules", ""})
 public class RulesController {
 
-    @PostMapping("/evaluate-rate")
-    public ResponseEntity<Map<String, Object>> evaluateRate(@RequestBody(required = false) Map<String, Object> request) {
-        double basePrice = 35000.0;
-        if (request != null && request.containsKey("basePrice")) {
-            basePrice = Double.parseDouble(request.get("basePrice").toString());
-        }
+    private static final Logger log = LoggerFactory.getLogger(RulesController.class);
 
-        boolean isWeekend = false;
-        if (request != null && request.containsKey("isWeekend")) {
-            isWeekend = Boolean.parseBoolean(request.get("isWeekend").toString());
-        }
+    private final AllyRanker ranker;
 
-        double surcharge = isWeekend ? 5000.0 : 0.0;
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("service", "MANI-Rules-Java");
-        response.put("correlationId", CorrelationIdFilter.current());
-        response.put("basePrice", basePrice);
-        response.put("surcharge", surcharge);
-        response.put("finalPrice", basePrice + surcharge);
-        response.put("ruleApplied", isWeekend ? "REGLA-FIN-DE-SEMANA (+5000)" : "TARIFA-ESTANDAR");
-        response.put("status", "APPLIED");
-        return ResponseEntity.ok(response);
+    public RulesController(AllyRanker ranker) {
+        this.ranker = ranker;
     }
 
     @PostMapping("/rank-allies")
-    public ResponseEntity<Map<String, Object>> rankAllies(@RequestBody(required = false) Map<String, Object> request) {
-        List<Map<String, Object>> mockAllies = new ArrayList<>();
-        mockAllies.add(Map.of("id", "aliado-1", "name", "Carolina Gómez", "rating", 4.9, "score", 98));
-        mockAllies.add(Map.of("id", "aliado-2", "name", "Paola Morales", "rating", 4.7, "score", 92));
-        mockAllies.add(Map.of("id", "aliado-3", "name", "Sandra Rivas", "rating", 4.5, "score", 85));
+    public AllyRankingResponse rankAllies(
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader,
+            @RequestHeader(value = "X-User-Role", required = false) String roleHeader,
+            @Valid @RequestBody AllyRankingRequest request) {
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("correlationId", CorrelationIdFilter.current());
-        response.put("rankedAllies", mockAllies);
-        response.put("criteria", "CALIFICACION_Y_EXPERIENCIA");
-        return ResponseEntity.ok(response);
+        if (!StringUtils.hasText(roleHeader)) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Encabezado X-User-Role requerido");
+        }
+        if (!StringUtils.hasText(tenantHeader)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "TENANT_REQUIRED", "Encabezado X-Tenant-Id requerido");
+        }
+        CriterioRanking criterio = CriterioRanking.parse(request.criterio())
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR",
+                        "criterio debe ser CALIFICACION o COBERTURA"));
+        ranker.datosInvalidos(criterio, request.candidatos()).ifPresent(problema -> {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", problema);
+        });
+
+        String tenantId = tenantHeader.trim();
+        List<RankedAlly> aliados = ranker.rank(criterio, request.candidatos());
+        log.info("Ranking de aliados tenant={} criterio={} candidatos={}", tenantId, criterio, aliados.size());
+
+        return new AllyRankingResponse(criterio.name(), tenantId, aliados, CorrelationIdFilter.current());
     }
 }
