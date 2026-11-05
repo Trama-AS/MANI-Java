@@ -37,11 +37,12 @@ Bienvenido al repositorio **MANI-Rules-Java**. Este archivo define el rol y las 
 ## 3. Protocolos y Estándares
 * **Endpoints:**
   - `GET /health` y `GET /api/v1/rules/health`: Healthcheck.
-  - `POST /api/v1/rules/evaluate-rate`: Cálculo dinámico de tarifa y desglose de recargos.
-  - `POST /api/v1/rules/rank-allies`: Ordenamiento y ranking de profesionales disponibles.
+  - `POST /api/v1/rules/categories/evaluate`: Reglas operativas de la categoría de servicio.
+  - `POST /api/v1/rules/rates/evaluate`: Evaluación de importes contra la tarifa de referencia que envía Core.
+  - `POST /api/v1/rules/rank-allies`: Ordenamiento de aliados según el criterio (`CALIFICACION` | `COBERTURA`) y las métricas reales que envía quien llama.
 * **Encabezados Requeridos:**
   - `X-Correlation-ID`: Identificador de correlación para observabilidad y trazabilidad distribuida.
-  - `Authorization`: Token JWT para validaciones contextuales por tenant.
+  - `X-Tenant-Id` y `X-User-Role`: Tenant y rol de la sesión; los pone quien ya validó el JWT (Gateway o el servicio que llama por la red interna).
 
 ---
 

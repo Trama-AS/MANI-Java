@@ -35,8 +35,8 @@ flowchart LR
 | Método | Ruta en Gateway | Descripción | Body Requerido |
 | :--- | :--- | :--- | :---: |
 | `GET` | `/api/v1/rules/health` | Verificación de estado del motor de reglas. | No |
-| `POST` | `/api/v1/rules/evaluate-rate` | Cálculo de precio final con desglose de recargos. | Sí (JSON) |
-| `POST` | `/api/v1/rules/rank-allies` | Ordenamiento y ponderación de aliados para servicio. | Opcional |
+| `POST` | `/api/v1/rules/rates/evaluate` | Evaluación de importes contra la tarifa de referencia que envía Core. | Sí (JSON) |
+| `POST` | `/api/v1/rules/rank-allies` | Orden de aliados según el criterio y las métricas reales que envía quien llama. | Sí (JSON) |
 | `POST` | `/api/v1/rules/categories/evaluate` | Reglas operativas de la categoría de servicio (US-03.1.1-M6). | Sí (JSON) |
 
 > El Gateway recorta `/api/v1/rules` antes de reenviar: cada ruta también responde sin el prefijo. Core la invoca completa por la red interna (`RULES_SERVICE_URL`, p. ej. `http://rules-service:8080`).
@@ -69,28 +69,59 @@ Errores: `400 VALIDATION_ERROR | TENANT_REQUIRED`, `401 UNAUTHORIZED`, `403 FORB
 
 Los parámetros viven en `application.properties` (`mani.rules.category.*`) con override por tenant (`mani.rules.category.tenants[<uuid>].*`): cambiarlos solo exige redesplegar Rules. Un flujo nuevo además requiere ampliar el `CHECK ck_categoria_flujo` en BD.
 
-### Ejemplo: Evaluación de Tarifa (`POST /api/v1/rules/evaluate-rate`)
+### Ejemplo: Evaluación de Tarifa (`POST /api/v1/rules/rates/evaluate`)
+Requiere `X-Tenant-Id` y `X-User-Role`. Rules no tiene base de datos: cada importe llega con la tarifa que regía.
+
 **Petición:**
 ```json
 {
-  "basePrice": 45000,
-  "isWeekend": true,
-  "category": "Semipermanente"
+  "items": [
+    { "id": "cotizacion-1", "total": 210000, "valorMin": 100000, "valorTipico": 150000, "valorMax": 200000 }
+  ]
 }
 ```
 
 **Respuesta (`200 OK`):**
 ```json
 {
-  "service": "MANI-Java",
-  "basePrice": 45000.0,
-  "surcharge": 5000.0,
-  "finalPrice": 50000.0,
-  "ruleApplied": "REGLA-FIN-DE-SEMANA (+5000)",
-  "status": "APPLIED",
+  "version": "rates-v1",
+  "toleranciaPorcentaje": 0,
+  "tenantId": "10000000-0000-4000-8000-000000000011",
+  "resultados": [
+    { "id": "cotizacion-1", "resultado": "POR_ENCIMA", "desviacionPorcentaje": 5.00 }
+  ],
   "correlationId": "c9a4b2a8-1234-5678-90ab-cdef12345678"
 }
 ```
+
+### Ejemplo: Ranking de Aliados (`POST /api/v1/rules/rank-allies`)
+Requiere `X-Tenant-Id` y `X-User-Role`. `criterio` es obligatorio (`CALIFICACION` o `COBERTURA`): si falta o no es válido responde `400 VALIDATION_ERROR`, sin orden por omisión. `zonasCobertura` solo es obligatorio con `COBERTURA`.
+
+**Petición:**
+```json
+{
+  "criterio": "CALIFICACION",
+  "candidatos": [
+    { "id": "aliado-a", "calificacionPromedio": 4.5, "totalCalificaciones": 12, "zonasCobertura": 2 },
+    { "id": "aliado-b", "calificacionPromedio": null, "totalCalificaciones": 0, "zonasCobertura": 5 }
+  ]
+}
+```
+
+**Respuesta (`200 OK`):**
+```json
+{
+  "criterio": "CALIFICACION",
+  "tenantId": "10000000-0000-4000-8000-000000000011",
+  "aliados": [
+    { "id": "aliado-a", "posicion": 1, "puntaje": 0.9000, "razones": ["Calificación promedio 4.5 de 5 (12 calificaciones)"] },
+    { "id": "aliado-b", "posicion": 2, "puntaje": null, "razones": ["Sin calificaciones todavía: va después de los valorados"] }
+  ],
+  "correlationId": "c9a4b2a8-1234-5678-90ab-cdef12345678"
+}
+```
+
+Un aliado sin calificaciones no vale 0: va después de los valorados con cualquier criterio. Dentro de cada grupo manda la métrica del criterio y el empate se resuelve por `id`. `puntaje` va de 0 a 1, es informativo y es `null` si el aliado no tiene dato para el criterio.
 
 ---
 
@@ -153,6 +184,8 @@ El reporte queda en `target/site/jacoco/` (HTML) y `target/site/jacoco/jacoco.xm
 | `CategoryRuleEvaluatorTest` | Reglas puras: límites 2/3/60/61, conteo por caracteres (emoji), letras Unicode, normalización, flujos, UPDATE parcial, OPERATE, reglas configurables, determinismo |
 | `CategoryRulesPropertiesTest` | Binding de `mani.rules.category.*`, override por tenant, versión trazable, configuración incoherente que impide el arranque |
 | `CategoryRulesControllerTest` | Contrato HTTP: forma de respuesta, prefijo del Gateway, roles, tenant (`TENANT_REQUIRED`, `TENANT_MISMATCH`), 400/401/403/415 |
+| `RateEvaluatorTest`, `RatesControllerTest` | Tarifa: límites del rango, tolerancia, desviación y contrato HTTP de `/rates/evaluate` |
+| `AllyRankerTest`, `RulesControllerTest` | Ranking: cada criterio, empates, sin calificación, determinismo y contrato HTTP de `/rank-allies` |
 | `UnexpectedErrorTest`, `WebSkeletonTest`, `HealthControllerSmokeTest` | 500 uniforme sin filtrar detalle, correlation ID, CORS, 404/405 |
 
 El workflow `CI` ejecuta `mvn -B verify` en cada Pull Request y push a `main`/`develop`, publica cobertura y reportes de Surefire, y corre **SonarCloud con `sonar.qualitygate.wait=true`** (el PR falla si no pasa el Quality Gate). Ese paso se activa cuando el repositorio tiene el secret `SONAR_TOKEN` y el proyecto `Trama-AS_MANI-Java` existe en SonarCloud (DevOps); mientras tanto CI emite una advertencia en vez de fallar.
