@@ -48,20 +48,14 @@ public class TenantRulesValidator {
         }
     }
 
-    /** Lista de reglas incumplidas; vacía si el conjunto es válido. */
-    public List<String> violations(JsonNode reglas) {
-        return evaluar(reglas).violaciones();
-    }
-
     public Resultado evaluar(JsonNode reglas) {
         List<String> v = new ArrayList<>();
         if (reglas == null || !reglas.isObject()) {
             v.add("rules debe ser un objeto");
             return new Resultado(v, null);
         }
-        String texto = texto(reglas.path("ordenListado").path("criterio"));
-        Optional<CriterioRanking> criterio = texto == null ? Optional.empty() : CriterioRanking.parse(texto);
-        if (criterio.isEmpty()) {
+        String criterio = criterio(reglas.path("ordenListado").path("criterio")).map(Enum::name).orElse(null);
+        if (criterio == null) {
             v.add("ordenListado.criterio debe ser CALIFICACION o COBERTURA");
         }
         JsonNode tolerancia = rango(v, reglas.path("alertaTarifa").path("toleranciaPorcentaje"), 0, 50,
@@ -70,30 +64,43 @@ public class TenantRulesValidator {
         JsonNode ventana = rango(v, reglas.path("cancelacion").path("ventanaHoras"), 0, 72, "cancelacion.ventanaHoras");
         JsonNode penalizacion = rango(v, reglas.path("cancelacion").path("penalizacionPorcentaje"), 0, 100,
                 "cancelacion.penalizacionPorcentaje");
-        if (ventana != null && penalizacion != null && penalizacion.asDouble() > 0 && ventana.asDouble() == 0) {
+        if (penalizacionSinVentana(ventana, penalizacion)) {
             v.add("cancelacion: una penalización mayor que 0 exige una ventana mayor que 0 horas");
         }
         JsonNode minutos = reglas.path("oferta").path("minutosParaAceptar");
-        if (!minutos.isIntegralNumber() || minutos.asLong() < 1 || minutos.asLong() > 1440) {
+        if (!minutosValidos(minutos)) {
             v.add("oferta.minutosParaAceptar debe ser un entero entre 1 y 1440");
         }
         if (!v.isEmpty()) {
             return new Resultado(v, null);
         }
+        return new Resultado(v, normalizadas(criterio, tolerancia, comision, ventana, penalizacion, minutos.asLong()));
+    }
 
+    private static Optional<CriterioRanking> criterio(JsonNode nodo) {
+        return nodo.isTextual() ? CriterioRanking.parse(nodo.asText()) : Optional.empty();
+    }
+
+    private static boolean penalizacionSinVentana(JsonNode ventana, JsonNode penalizacion) {
+        return ventana != null && penalizacion != null && penalizacion.asDouble() > 0 && ventana.asDouble() == 0;
+    }
+
+    private static boolean minutosValidos(JsonNode minutos) {
+        return minutos.isIntegralNumber() && minutos.asLong() >= 1 && minutos.asLong() <= 1440;
+    }
+
+    /** Solo los campos de la política, con el criterio ya en mayúsculas: es lo que Core guarda. */
+    private static ObjectNode normalizadas(String criterio, JsonNode tolerancia, JsonNode comision, JsonNode ventana,
+            JsonNode penalizacion, long minutos) {
         ObjectNode n = JsonNodeFactory.instance.objectNode();
-        n.putObject("ordenListado").put("criterio", criterio.get().name());
+        n.putObject("ordenListado").put("criterio", criterio);
         n.putObject("alertaTarifa").set("toleranciaPorcentaje", tolerancia);
         n.putObject("comision").set("porcentaje", comision);
         ObjectNode cancelacion = n.putObject("cancelacion");
         cancelacion.set("ventanaHoras", ventana);
         cancelacion.set("penalizacionPorcentaje", penalizacion);
-        n.putObject("oferta").put("minutosParaAceptar", minutos.asLong());
-        return new Resultado(v, n);
-    }
-
-    private static String texto(JsonNode nodo) {
-        return nodo.isTextual() ? nodo.asText() : null;
+        n.putObject("oferta").put("minutosParaAceptar", minutos);
+        return n;
     }
 
     private static JsonNode rango(List<String> v, JsonNode nodo, double min, double max, String campo) {
