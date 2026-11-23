@@ -98,6 +98,9 @@ class TenantRulesControllerTest {
     @CsvSource(delimiter = '|', value = {
         "\"PRECIO\"|15|10|4|25|30|ordenListado.criterio debe ser CALIFICACION o COBERTURA",
         "\"COBERTURA\"|51|10|4|25|30|alertaTarifa.toleranciaPorcentaje debe ser un número entre 0 y 50",
+        "\"COBERTURA\"|\"15\"|10|4|25|30|alertaTarifa.toleranciaPorcentaje debe ser un número entre 0 y 50",
+        "\"COBERTURA\"|null|10|4|25|30|alertaTarifa.toleranciaPorcentaje debe ser un número entre 0 y 50",
+        "1|15|10|4|25|30|ordenListado.criterio debe ser CALIFICACION o COBERTURA",
         "\"COBERTURA\"|15|31|4|25|30|comision.porcentaje debe ser un número entre 0 y 30, con máximo 2 decimales",
         "\"COBERTURA\"|15|10.555|4|25|30|comision.porcentaje debe ser un número entre 0 y 30, con máximo 2 decimales",
         "\"COBERTURA\"|15|10|73|25|30|cancelacion.ventanaHoras debe ser un número entre 0 y 72",
