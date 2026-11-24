@@ -20,6 +20,9 @@ import org.springframework.web.bind.annotation.RestController;
  * antes de guardar una versión nueva. Unas reglas incoherentes son un 200 con {@code valid=false} y la lista de
  * violaciones: el error es de las reglas, no de la petición. Tenant y rol llegan por encabezado, como en el resto de
  * Rules.
+ *
+ * <p>Si son válidas, {@code rules} trae las reglas normalizadas, que son las que Core guarda (SCRUM-1722 / QAS-21):
+ * Core ya no valida por su cuenta.
  */
 @RestController
 @RequestMapping({"/api/v1/rules", ""})
@@ -33,7 +36,7 @@ public class TenantRulesController {
         this.validator = validator;
     }
 
-    public record Response(boolean valid, String version, List<String> violations, String tenantId,
+    public record Response(boolean valid, String version, List<String> violations, JsonNode rules, String tenantId,
             String correlationId) {
     }
 
@@ -53,10 +56,10 @@ public class TenantRulesController {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "rules es obligatorio");
         }
         String tenantId = tenantHeader.trim();
-        List<String> violations = validator.violations(body.get("rules"));
+        TenantRulesValidator.Resultado resultado = validator.evaluar(body.get("rules"));
         log.info("Validación de reglas de tenant tenant={} version={} valid={} violaciones={}", tenantId,
-                validator.version(), violations.isEmpty(), violations.size());
-        return new Response(violations.isEmpty(), validator.version(), violations, tenantId,
-                CorrelationIdFilter.current());
+                validator.version(), resultado.valido(), resultado.violaciones().size());
+        return new Response(resultado.valido(), validator.version(), resultado.violaciones(),
+                resultado.normalizadas(), tenantId, CorrelationIdFilter.current());
     }
 }

@@ -62,6 +62,31 @@ class TenantRulesControllerTest {
     }
 
     @Test
+    void devuelveLasReglasNormalizadasParaQueCoreLasGuarde() throws Exception {
+        String conExtras = "{\"rules\":{\"ordenListado\":{\"criterio\":\"  cobertura \"},"
+                + "\"alertaTarifa\":{\"toleranciaPorcentaje\":15.5},"
+                + "\"comision\":{\"porcentaje\":10.25,\"extra\":1},"
+                + "\"cancelacion\":{\"ventanaHoras\":4,\"penalizacionPorcentaje\":25},"
+                + "\"oferta\":{\"minutosParaAceptar\":30},\"campoAjeno\":true}}";
+        validar("tenant-a", "ADMIN", conExtras)
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.rules.ordenListado.criterio").value("COBERTURA"))
+                .andExpect(jsonPath("$.rules.alertaTarifa.toleranciaPorcentaje").value(15.5))
+                .andExpect(jsonPath("$.rules.comision.porcentaje").value(10.25))
+                .andExpect(jsonPath("$.rules.comision.extra").doesNotExist())
+                .andExpect(jsonPath("$.rules.campoAjeno").doesNotExist())
+                .andExpect(jsonPath("$.rules.cancelacion.ventanaHoras").value(4))
+                .andExpect(jsonPath("$.rules.oferta.minutosParaAceptar").value(30));
+    }
+
+    @Test
+    void reglasInvalidasNoTraenReglasNormalizadas() throws Exception {
+        validar("tenant-a", "ADMIN", reglas("\"PRECIO\"", "15", "10", "4", "25", "30"))
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.rules").doesNotExist());
+    }
+
+    @Test
     void losLimitesSonInclusivos() throws Exception {
         validar("tenant-a", "ADMIN", reglas("\"calificacion\"", "50", "30", "72", "100", "1440"))
                 .andExpect(jsonPath("$.valid").value(true));
@@ -73,7 +98,11 @@ class TenantRulesControllerTest {
     @CsvSource(delimiter = '|', value = {
         "\"PRECIO\"|15|10|4|25|30|ordenListado.criterio debe ser CALIFICACION o COBERTURA",
         "\"COBERTURA\"|51|10|4|25|30|alertaTarifa.toleranciaPorcentaje debe ser un número entre 0 y 50",
-        "\"COBERTURA\"|15|31|4|25|30|comision.porcentaje debe ser un número entre 0 y 30",
+        "\"COBERTURA\"|\"15\"|10|4|25|30|alertaTarifa.toleranciaPorcentaje debe ser un número entre 0 y 50",
+        "\"COBERTURA\"|null|10|4|25|30|alertaTarifa.toleranciaPorcentaje debe ser un número entre 0 y 50",
+        "1|15|10|4|25|30|ordenListado.criterio debe ser CALIFICACION o COBERTURA",
+        "\"COBERTURA\"|15|31|4|25|30|comision.porcentaje debe ser un número entre 0 y 30, con máximo 2 decimales",
+        "\"COBERTURA\"|15|10.555|4|25|30|comision.porcentaje debe ser un número entre 0 y 30, con máximo 2 decimales",
         "\"COBERTURA\"|15|10|73|25|30|cancelacion.ventanaHoras debe ser un número entre 0 y 72",
         "\"COBERTURA\"|15|10|4|101|30|cancelacion.penalizacionPorcentaje debe ser un número entre 0 y 100",
         "\"COBERTURA\"|15|10|0|25|30|cancelacion: una penalización mayor que 0 exige una ventana mayor que 0 horas",
